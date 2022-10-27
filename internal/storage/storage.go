@@ -9,34 +9,44 @@ import (
 const path = "users.txt"
 
 type File struct {
-	*os.File
+	f *os.File
 }
 
-func Open() (*File, error) {
-	f, err := os.Open(path)
+func New() (*File, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0666)
 	if err != nil {
 		return nil, err
 	}
-	return &File{File: f}, nil
+	return &File{f: f}, nil
 }
 
 func (f *File) Close() error {
-	return f.File.Close()
+	return f.f.Close()
 }
 
 func (f *File) Read(dst any) error {
-	b, err := ioutil.ReadAll(f.File)
+	b, err := ioutil.ReadAll(f.f)
 	if err != nil {
 		return err
+	}
+	if len(b) == 0 {
+		return nil
 	}
 	return json.Unmarshal(b, dst)
 }
 
 func (f *File) Write(src any) error {
+	if src == nil {
+		return nil
+	}
 	b, err := json.Marshal(src)
 	if err != nil {
 		return err
 	}
-	_, err = f.File.Write(b)
+	err = f.f.Truncate(0)
+	if err != nil {
+		return err
+	}
+	_, err = f.f.WriteAt(b, 0)
 	return err
 }
