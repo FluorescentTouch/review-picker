@@ -58,30 +58,60 @@ func (u Users) Rand(chatID int64, except string) (User, error) {
 	u.l.Lock()
 	defer u.l.Unlock()
 
-	for name, user := range u.u[chatID] {
-		if name != except && !user.Vacation {
-			return user, nil
+	// map reads has poor versatility in low dimensional sets, so transform to rand read from slice instead
+	trimmed := make(map[string]User)
+	for k, v := range u.u[chatID] {
+		if k == except || v.Vacation {
+			continue
 		}
+		trimmed[k] = v
 	}
 
-	return User{}, ErrNotFound
+	if len(trimmed) == 0 {
+		return User{}, ErrNotFound
+	}
+
+	list := make([]User, 0, len(trimmed))
+	for _, v := range trimmed {
+		list = append(list, v)
+	}
+
+	index := rand.Intn(len(list) - 1)
+	return list[index], nil
 }
 
 func (u Users) Rand2(chatID int64, except string) ([2]User, error) {
 	u.l.Lock()
 	defer u.l.Unlock()
 
-	index := 0
-	users := [2]User{}
-	for name, user := range u.u[chatID] {
-		if name != except && !user.Vacation {
-			users[index] = user
-			index++
-			if index > 1 {
-				return users, nil
-			}
+	// map reads has poor versatility in low dimensional sets, so transform to rand read from slice instead
+	trimmed := make(map[string]User)
+	for k, v := range u.u[chatID] {
+		if k == except || v.Vacation {
+			continue
 		}
+		trimmed[k] = v
 	}
 
-	return [2]User{}, ErrNotFound
+	if len(trimmed) < 2 {
+		return [2]User{}, ErrNotFound
+	}
+
+	list := make([]User, 0, len(trimmed))
+	for _, v := range trimmed {
+		list = append(list, v)
+	}
+
+	candidates := make(map[User]struct{}, 2)
+	for len(candidates) != 2 {
+		index := rand.Intn(len(list) - 1)
+		candidates[list[index]] = struct{}{}
+	}
+
+	out := make([]User, 0, 2)
+	for k := range candidates {
+		out = append(out, k)
+	}
+
+	return [2]User{out[0], out[1]}, nil
 }
