@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -44,6 +45,9 @@ type Handlers struct {
 	bot   bot.Bot
 	users users.Users
 
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	mapping map[string]handler
 }
 
@@ -53,9 +57,12 @@ type handler struct {
 }
 
 func NewHandlers(bot bot.Bot, usersService users.Users) *Handlers {
+	ctx, cancel := context.WithCancel(context.Background())
 	h := &Handlers{
-		bot:   bot,
-		users: usersService,
+		bot:    bot,
+		users:  usersService,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 	h.mapping = map[string]handler{
 		commandAdd:             {h: h.AddUserToList, d: commandAddDescription},
@@ -69,33 +76,46 @@ func NewHandlers(bot bot.Bot, usersService users.Users) *Handlers {
 	return h
 }
 
+func (h *Handlers) Stop() {
+	h.cancel()
+}
+
 func (h *Handlers) StartCycle() {
-	for msg := range h.bot.Messages() {
-		log.Printf("msg: %+v\n", msg)
+	log.Println("starting listening cycle...")
 
-		if !msg.Command {
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		case msg, ok := <-h.bot.Messages():
+			if !ok {
+				return
+			}
+
+			if !msg.Command {
+				continue
+			}
+
+			// casual usecase
+			command := strings.Split(msg.Text, " ")[0]
+			handler, ok := h.mapping[command]
+			if ok {
+				handler.h(msg)
+				continue
+			}
+
+			// menu usecase
+			command = strings.Split(msg.Text, "@")[0]
+			handler, ok = h.mapping[command]
+			if ok {
+				handler.h(msg)
+				continue
+			}
+
+			// unknown command
+			h.bot.ReplyTo(msg.ChatID, msg.ReplyID, errUnknownCommand.Error())
 			continue
 		}
-
-		// casual usecase
-		command := strings.Split(msg.Text, " ")[0]
-		handler, ok := h.mapping[command]
-		if ok {
-			handler.h(msg)
-			continue
-		}
-
-		// menu usecase
-		command = strings.Split(msg.Text, "@")[0]
-		handler, ok = h.mapping[command]
-		if ok {
-			handler.h(msg)
-			continue
-		}
-
-		// unknown command
-		h.bot.ReplyTo(msg.ChatID, msg.ReplyID, errUnknownCommand.Error())
-		continue
 	}
 }
 

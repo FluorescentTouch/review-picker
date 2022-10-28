@@ -19,7 +19,7 @@ type userStorage interface {
 type Users struct {
 	u map[int64]map[string]User // chatID:userID:User
 	s userStorage
-	l *sync.Mutex
+	l *sync.RWMutex
 }
 
 type User struct {
@@ -35,10 +35,32 @@ func NewUsers(s userStorage) (Users, error) {
 	u := Users{
 		u: make(map[int64]map[string]User),
 		s: s,
-		l: &sync.Mutex{},
+		l: &sync.RWMutex{},
 	}
 	err := s.Read(&u.u)
 	return u, err
+}
+
+func (u Users) ChatList() []int64 {
+	u.l.RLock()
+	defer u.l.RUnlock()
+
+	out := make([]int64, 0, len(u.u))
+	for id := range u.u {
+		out = append(out, id)
+	}
+	return out
+}
+
+func (u Users) List(chatID int64) []User {
+	u.l.RLock()
+	defer u.l.RUnlock()
+
+	out := make([]User, 0, len(u.u[chatID]))
+	for _, user := range u.u[chatID] {
+		out = append(out, user)
+	}
+	return out
 }
 
 func (u Users) AddUser(chatID int64, user User) error {
@@ -55,8 +77,8 @@ func (u Users) AddUser(chatID int64, user User) error {
 }
 
 func (u Users) Rand(chatID int64, except string) (User, error) {
-	u.l.Lock()
-	defer u.l.Unlock()
+	u.l.RLock()
+	defer u.l.RUnlock()
 
 	// map reads has poor versatility in low dimensional sets, so transform to rand read from slice instead
 	trimmed := make(map[string]User)
@@ -81,8 +103,8 @@ func (u Users) Rand(chatID int64, except string) (User, error) {
 }
 
 func (u Users) Rand2(chatID int64, except string) ([2]User, error) {
-	u.l.Lock()
-	defer u.l.Unlock()
+	u.l.RLock()
+	defer u.l.RUnlock()
 
 	// map reads has poor versatility in low dimensional sets, so transform to rand read from slice instead
 	trimmed := make(map[string]User)
